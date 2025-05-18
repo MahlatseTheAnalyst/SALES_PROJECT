@@ -1,0 +1,84 @@
+SELECT *
+ FROM "SALES"."PUBLIC"."SALES_DATASET";
+
+
+
+-- STEP 1: Create aggregated data for baseline and promo periods
+WITH period_summary AS (
+    SELECT 
+        'PRE_PROMO' AS PERIOD,
+        AVG(SALES / NULLIF(QUANTITY_SOLD, 0)) AS AVG_PRICE,
+        AVG(QUANTITY_SOLD) AS AVG_QTY
+    FROM "SALES"."PUBLIC"."SALES_DATASET"
+    WHERE DATE BETWEEN '2013-12-30' AND '2014-12-30'
+
+    UNION ALL
+
+    SELECT 
+        'PROMO' AS PERIOD,
+        AVG(SALES / NULLIF(QUANTITY_SOLD, 0)) AS AVG_PRICE,
+        AVG(QUANTITY_SOLD) AS AVG_QTY
+    FROM "SALES"."PUBLIC"."SALES_DATASET"
+    WHERE DATE BETWEEN '2015-01-01' AND '2016-11-16'
+),
+
+-- STEP 2: Join to calculate Price Elasticity of Demand
+ped_calc AS (
+    SELECT 
+        p1.AVG_PRICE AS PRICE_BEFORE,
+        p2.AVG_PRICE AS PRICE_DURING,
+        p1.AVG_QTY AS QTY_BEFORE,
+        p2.AVG_QTY AS QTY_DURING,
+        ROUND(((p2.AVG_QTY - p1.AVG_QTY) / NULLIF(p1.AVG_QTY, 0)), 4) AS QTY_CHANGE_PCT,
+        ROUND(((p2.AVG_PRICE - p1.AVG_PRICE) / NULLIF(p1.AVG_PRICE, 0)), 4) AS PRICE_CHANGE_PCT,
+        ROUND(
+            ((p2.AVG_QTY - p1.AVG_QTY) / NULLIF(p1.AVG_QTY, 0)) /
+            NULLIF((p2.AVG_PRICE - p1.AVG_PRICE) / NULLIF(p1.AVG_PRICE, 0), 0), 2
+        ) AS PED
+    FROM 
+        (SELECT * FROM period_summary WHERE PERIOD = 'PRE_PROMO') p1,
+        (SELECT * FROM period_summary WHERE PERIOD = 'PROMO') p2
+)
+
+-- STEP 3: Show PED with your daily breakdown
+SELECT 
+    s.DATE,
+    TO_VARCHAR(TO_DATE(s.DATE, 'YYYY-MM-DD'), 'DY') AS DAY_OF_WEEK,
+    CASE TO_VARCHAR(TO_DATE(s.DATE, 'YYYY-MM-DD'), 'MM')
+        WHEN '01' THEN 'January'
+        WHEN '02' THEN 'February'
+        WHEN '03' THEN 'March'
+        WHEN '04' THEN 'April'
+        WHEN '05' THEN 'May'
+        WHEN '06' THEN 'June'
+        WHEN '07' THEN 'July'
+        WHEN '08' THEN 'August'
+        WHEN '09' THEN 'September'
+        WHEN '10' THEN 'October'
+        WHEN '11' THEN 'November'
+        WHEN '12' THEN 'December'
+        ELSE 'INVALID MONTH'
+    END AS MONTH_NAME,
+    s.SALES,
+    COUNT(*) AS SALES_COUNT,
+    s.COST_OF_SALES,
+    s.QUANTITY_SOLD,
+    ROUND(SUM(s.SALES / NULLIF(s.QUANTITY_SOLD, 0))) AS TOTAL_UNIT_PRICE,
+    ROUND(AVG(s.SALES)) AS AVERAGE_SALES,
+    ROUND((s.SALES - s.COST_OF_SALES)/ NULLIF(s.QUANTITY_SOLD, 0)) AS GROSS_PROFIT_PER_UNIT,
+    ROUND((s.SALES - s.QUANTITY_SOLD)) AS PRICE_PER_UNIT,
+    ROUND(s.SALES / NULLIF(s.QUANTITY_SOLD, 0)) AS UNIT_PRICE,
+    ROUND((s.SALES - s.COST_OF_SALES) / NULLIF(s.SALES, 0) * 100, 2) AS DAILY_GROSS_PROFIT_PCT,
+    p.PED
+FROM 
+    "SALES"."PUBLIC"."SALES_DATASET" s,
+    ped_calc p
+GROUP BY 
+    s.DATE, s.SALES, s.COST_OF_SALES, s.QUANTITY_SOLD, p.PED;
+
+
+
+SELECT 
+    DATE,
+    ((SALES - COST_OF_SALES) / NULLIF(SALES, 0)) * 100 AS DAILY_GROSS_PROFIT_PCT
+FROM "SALES"."PUBLIC"."SALES_DATASET";
